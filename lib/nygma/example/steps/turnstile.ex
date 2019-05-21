@@ -7,11 +7,13 @@ defmodule Nygma.ExampleSteps.Turnstile do
   def transition_events, do: [:lock, :unlock, :ignore, :enter, :skip]
 
   def render(%{state: :locked}) do
-    Text.from_map(%{text: "Locked"})
+    {:ok, text} = Text.from_map(%{text: "Locked"})
+    text
   end
 
   def render(%{state: :unlocked}) do
-    Text.from_map(%{text: "Open"})
+    {:ok, text} = Text.from_map(%{text: "Open"})
+    text
   end
 
   def on_enter(context) do

@@ -11,14 +11,19 @@ defmodule Nygma.Interaction do
   @callback init(term) :: {context, initial_step}
 
   defmodule State do
-    defstruct [:context, :step, :transition_graph]
+    defstruct [:context, :step, :transition_graph, :id]
 
     def new(context, step, transition_graph) do
       %__MODULE__{
         context: context,
         step: step,
-        transition_graph: transition_graph
+        transition_graph: transition_graph,
+        id: UUID.uuid4()
       }
+    end
+
+    def interaction_topic(%__MODULE__{id: id}) do
+      "interaction:content:#{id}"
     end
   end
 
@@ -32,6 +37,10 @@ defmodule Nygma.Interaction do
     GenServer.start_link(__MODULE__, {context, transition_graph})
   end
 
+  def interaction_topic(pid) do
+    GenServer.call(pid, :interaction_topic)
+  end
+
   # Callback Functions
 
   def init({context, transition_graph}) do
@@ -41,25 +50,9 @@ defmodule Nygma.Interaction do
 
     step = TransitionGraph.initial_state(transition_graph)
 
-    IO.inspect("Calling #{inspect(step)}.on_enter/1 with context: #{inspect(context)}")
+    state = initial_state(step, context, transition_graph)
 
-    state =
-      case step.on_enter(context) do
-        {transition_event, context} ->
-          IO.inspect(
-            "#{inspect(step)}.on_enter/1 triggered #{inspect(transition_event)}, with context: #{
-              inspect(context)
-            }"
-          )
-
-          context
-          |> State.new(step, transition_graph)
-          |> transition(transition_event, context)
-
-        context ->
-          IO.inspect("#{inspect(step)} returned with context: #{inspect(context)}")
-          State.new(context, step, transition_graph)
-      end
+    publish_if_changed(nil, state)
 
     {:ok, state}
   end
@@ -80,7 +73,14 @@ defmodule Nygma.Interaction do
       }"
     )
 
-    {:noreply, transition(state, transition_event, context)}
+    new_state = transition(state, transition_event, context)
+    publish_if_changed(state, new_state)
+
+    {:noreply, new_state}
+  end
+
+  def handle_call(:interaction_topic, _from, %State{} = state) do
+    {:reply, State.interaction_topic(state), state}
   end
 
   defp transition(state, transition_event, context) do
@@ -118,5 +118,38 @@ defmodule Nygma.Interaction do
         IO.inspect("#{inspect(next_step)}.on_enter/1 returned context: #{inspect(context)}")
         %State{state | context: context, step: next_step}
     end
+  end
+
+  defp initial_state(step, context, transition_graph) do
+    IO.inspect("Calling #{inspect(step)}.on_enter/1 with context: #{inspect(context)}")
+
+    case step.on_enter(context) do
+      {transition_event, context} ->
+        IO.inspect(
+          "#{inspect(step)}.on_enter/1 triggered #{inspect(transition_event)}, with context: #{
+            inspect(context)
+          }"
+        )
+
+        context
+        |> State.new(step, transition_graph)
+        |> transition(transition_event, context)
+
+      context ->
+        IO.inspect("#{inspect(step)} returned with context: #{inspect(context)}")
+        State.new(context, step, transition_graph)
+    end
+  end
+
+  defp publish_if_changed(state, new_state) do
+    if state != new_state do
+      content = new_state.step.render(new_state.context)
+
+      new_state
+      |> State.interaction_topic()
+      |> Nygma.PubSub.publish({:content_changed, new_state.id, content})
+    end
+
+    :ok
   end
 end

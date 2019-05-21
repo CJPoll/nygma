@@ -42,6 +42,7 @@ defmodule Nygma.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:predicator, "~> 0.7.0"},
       {:schemata, git: "https://github.com/cjpoll/schemata", ref: "cody/new-schemata"},
+      {:uuid, "~> 1.1.8"},
       {:yaml_elixir, "~> 2.1.0"}
     ]
   end
